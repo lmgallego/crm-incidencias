@@ -3,7 +3,7 @@ import shutil
 import datetime
 import os
 
-from .database import DB_PATH
+DB_PATH = 'db/cavacrm.db'
 
 def backup_db(backup_dir='backups'):
     if not os.path.exists(backup_dir):

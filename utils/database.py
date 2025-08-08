@@ -2,6 +2,8 @@ import sqlite3
 import pandas as pd
 import os
 import logging
+import datetime
+from .backup_restore import backup_db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -16,7 +18,7 @@ def get_db_connection():
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    with open(os.path.join('db', 'schema.sql'), 'r') as f:
+    with open(os.path.join('db', 'schema.sql'), 'r', encoding='utf-8') as f:
         cursor.executescript(f.read())
     conn.commit()
     # Chequeo de integridad
@@ -223,3 +225,67 @@ def get_incident_record_details(incident_record_id):
     if row:
         return dict(row)
     return {}
+
+def export_incidents_to_excel():
+    """Exporta historial completo de incidencias con acciones a Excel"""
+    conn = get_db_connection()
+    
+    # Obtener datos de incidencias
+    incidents_query = '''
+    SELECT 
+        ir.id as 'ID Registro',
+        ir.date as 'Fecha',
+        c.name || " " || c.surnames as 'Coordinador Registrador',
+        w.name as 'Bodega',
+        w.zone as 'Zona Bodega',
+        v.name || " " || v.surnames as 'Verificador Causante',
+        v.zone as 'Zona Verificador',
+        i.code || " - " || i.description as 'Incidencia',
+        ac.name || " " || ac.surnames as 'Coordinador Asignado',
+        ir.explanation as 'Explicación',
+        ir.status as 'Estado',
+        ir.responsible as 'Responsable'
+    FROM incident_records ir 
+    JOIN coordinators c ON ir.registering_coordinator_id = c.id 
+    JOIN warehouses w ON ir.warehouse_id = w.id 
+    JOIN verifiers v ON ir.causing_verifier_id = v.id 
+    JOIN incidents i ON ir.incident_id = i.id 
+    JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+    ORDER BY ir.date DESC
+    '''
+    
+    # Obtener datos de acciones
+    actions_query = '''
+    SELECT 
+        ia.incident_record_id as 'ID Registro',
+        ia.action_date as 'Fecha Acción',
+        ia.action_description as 'Descripción Acción',
+        ia.new_status as 'Nuevo Estado',
+        c.name || " " || c.surnames as 'Realizado Por'
+    FROM incident_actions ia
+    JOIN coordinators c ON ia.performed_by = c.id
+    ORDER BY ia.incident_record_id, ia.action_date
+    '''
+    
+    df_incidents = pd.read_sql_query(incidents_query, conn)
+    df_actions = pd.read_sql_query(actions_query, conn)
+    conn.close()
+    
+    # Crear archivo Excel
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'historial_incidencias_{timestamp}.xlsx'
+    
+    with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        df_incidents.to_excel(writer, sheet_name='Incidencias', index=False)
+        df_actions.to_excel(writer, sheet_name='Acciones', index=False)
+    
+    return filename
+
+def create_backup():
+    """Crea una copia de seguridad de la base de datos"""
+    try:
+        backup_path = backup_db()
+        return backup_path
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}")
+        raise e
