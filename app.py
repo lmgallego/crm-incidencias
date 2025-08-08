@@ -50,7 +50,7 @@ from streamlit_option_menu import option_menu
 from utils.database import init_db
 from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, incident_record_form, manage_incident_actions_form
 from components.analytics import analytics_incidents, analytics_verifiers, analytics_warehouses
-from components.delete import delete_test_data_form, backup_database_form, export_excel_form
+from components.delete import delete_test_data_form, backup_database_form, export_excel_form, restore_database_form
 import hashlib
 
 # Inicializar la base de datos
@@ -148,14 +148,16 @@ else:
         with st.sidebar:
             sub_selected = option_menu(
                 menu_title="Administración",
-                options=["Copia de Seguridad", "Exportar a Excel", "Borrar Datos de Prueba"],
-                icons=["shield-check", "file-earmark-excel", "trash"],
+                options=["Copia de Seguridad", "Restaurar Copia", "Exportar a Excel", "Borrar Datos de Prueba"],
+                icons=["shield-check", "arrow-clockwise", "file-earmark-excel", "trash"],
                 menu_icon="gear",
                 default_index=0,
             )
 
         if sub_selected == "Copia de Seguridad":
             backup_database_form()
+        elif sub_selected == "Restaurar Copia":
+            restore_database_form()
         elif sub_selected == "Exportar a Excel":
             export_excel_form()
         elif sub_selected == "Borrar Datos de Prueba":

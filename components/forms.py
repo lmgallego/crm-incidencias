@@ -30,7 +30,8 @@ def verifier_form():
     name = st.text_input('Nombre', key=f'verif_name_{st.session_state.verif_form_counter}', help='Mínimo 2 caracteres')
     surnames = st.text_input('Apellidos', key=f'verif_surnames_{st.session_state.verif_form_counter}', help='Mínimo 2 caracteres')
     phone = st.text_input('Teléfono', key=f'verif_phone_{st.session_state.verif_form_counter}', help='Formato: 9 dígitos')
-    zone = st.text_input('Zona', key=f'verif_zone_{st.session_state.verif_form_counter}')
+    zones = ['PENEDES', 'ALT CAMP', 'CONCA', 'ALMENDRALEJO', 'REQUENA', 'CARIÑENA']
+    zone = st.selectbox('Zona', options=zones, key=f'verif_zone_{st.session_state.verif_form_counter}')
     
     if st.button('Guardar Verificador'):
         if name and len(name) >= 2 and surnames and len(surnames) >= 2 and (phone.isdigit() and len(phone) == 9 or not phone):
@@ -49,7 +50,8 @@ def warehouse_form():
     
     name = st.text_input('Nombre', key=f'wh_name_{st.session_state.warehouse_form_counter}', help='Mínimo 3 caracteres')
     nif = st.text_input('NIF', key=f'wh_nif_{st.session_state.warehouse_form_counter}', help='Formato válido de NIF')
-    zone = st.text_input('Zona', key=f'wh_zone_{st.session_state.warehouse_form_counter}')
+    zones = ['PENEDES', 'ALT CAMP', 'CONCA', 'ALMENDRALEJO', 'REQUENA', 'CARIÑENA']
+    zone = st.selectbox('Zona', options=zones, key=f'wh_zone_{st.session_state.warehouse_form_counter}')
     if st.button('Guardar Bodega'):
         if name and len(name) >= 3 and nif and len(nif) >= 8:
             insert_warehouse(name, nif, zone)
