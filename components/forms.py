@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from utils.database import insert_coordinator, insert_verifier, insert_warehouse, load_csv_to_verifiers, load_csv_to_warehouses, insert_incident, get_coordinators, get_verifiers, get_warehouses, get_incidents, insert_incident_record, get_incident_records, insert_incident_action, get_incident_actions, get_incident_record_details
+from utils.database import insert_coordinator, insert_verifier, insert_warehouse, load_csv_to_verifiers, load_csv_to_warehouses, insert_incident, get_coordinators, get_verifiers, get_warehouses, get_incidents, insert_incident_record, get_incident_records, insert_incident_action, get_incident_actions, get_incident_record_details, search_incident_by_code, get_incident_records_by_incident_code
 
 def coordinator_form():
     st.subheader('Alta de Coordinador')
@@ -91,15 +91,101 @@ def incident_form():
     if 'incident_form_counter' not in st.session_state:
         st.session_state.incident_form_counter = 0
     
+    # Opción para código personalizado o automático
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        auto_code = st.checkbox('Código automático', value=True, key=f'auto_code_{st.session_state.incident_form_counter}', help='Generar código automáticamente o introducir uno personalizado')
+    
+    with col2:
+        if auto_code:
+            st.info('Se generará automáticamente un código secuencial (ej: 001, 002, etc.)')
+            custom_code = None
+        else:
+            custom_code = st.text_input('Código de Incidencia', key=f'inc_code_{st.session_state.incident_form_counter}', help='Introduzca un código único para la incidencia (ej: INC-2025-001)', max_chars=20)
+    
     description = st.text_area('Descripción de la Incidencia', key=f'inc_description_{st.session_state.incident_form_counter}', help='Proporcione una descripción detallada de la incidencia (mínimo 10 caracteres)')
+    
     if st.button('Guardar Incidencia'):
         if description and len(description) >= 10:
-            insert_incident(description)
-            st.success('Incidencia guardada exitosamente.')
-            st.session_state.incident_form_counter += 1
-            st.rerun()
+            if not auto_code and (not custom_code or len(custom_code.strip()) < 3):
+                st.error('Por favor, ingrese un código válido de al menos 3 caracteres o active la generación automática.')
+            else:
+                code_to_use = custom_code.strip() if not auto_code else None
+                result = insert_incident(description, code_to_use)
+                if result['success']:
+                    st.success(f'Incidencia guardada exitosamente con código: {result["code"]}')
+                    st.session_state.incident_form_counter += 1
+                    st.rerun()
+                else:
+                    st.error(result['error'])
         else:
             st.error('Por favor, ingrese una descripción con al menos 10 caracteres.')
+
+def search_incident_form():
+    """Formulario para buscar incidencias por código"""
+    st.header("🔍 Buscar Incidencia por Código")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        search_code = st.text_input(
+            "Código de Incidencia",
+            placeholder="Ej: 001, INC-2024-001",
+            help="Introduzca el código de la incidencia que desea buscar"
+        )
+    
+    with col2:
+        st.write("")
+        st.write("")
+        search_button = st.button("🔍 Buscar", type="primary")
+    
+    if search_button and search_code.strip():
+        # Buscar la incidencia
+        incident_result = search_incident_by_code(search_code.strip())
+        
+        if incident_result['success']:
+            incident = incident_result['incident']
+            
+            # Mostrar información de la incidencia
+            st.success(f"✅ Incidencia encontrada: **{incident['code']}**")
+            
+            with st.expander("📋 Detalles de la Incidencia", expanded=True):
+                st.write(f"**Código:** {incident['code']}")
+                st.write(f"**Descripción:** {incident['description']}")
+                st.write(f"**Fecha de creación:** {incident.get('created_at', 'No disponible')}")
+            
+            # Buscar registros asociados
+            records_result = get_incident_records_by_incident_code(search_code.strip())
+            
+            if records_result['success']:
+                records = records_result['records']
+                st.subheader(f"📊 Registros Asociados ({len(records)})")
+                
+                for i, record in enumerate(records, 1):
+                    with st.expander(f"Registro #{i} - {record['warehouse']} ({record['status']})"):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write(f"**Fecha:** {record['date']}")
+                            st.write(f"**Almacén:** {record['warehouse']} - {record['warehouse_zone']}")
+                            st.write(f"**Estado:** {record['status']}")
+                            st.write(f"**Tipo:** {record['incident_type']}")
+                        
+                        with col2:
+                            st.write(f"**Coordinador Registrante:** {record['registering_coordinator']}")
+                            st.write(f"**Verificador Causante:** {record['causing_verifier']}")
+                            st.write(f"**Coordinador Asignado:** {record['assigned_coordinator']}")
+                        
+                        if record.get('observations'):
+                            st.write(f"**Observaciones:** {record['observations']}")
+            else:
+                st.info("ℹ️ No se encontraron registros asociados a esta incidencia")
+                
+        else:
+            st.error(f"❌ {incident_result['error']}")
+    
+    elif search_button and not search_code.strip():
+        st.warning("⚠️ Por favor, ingrese un código de incidencia para buscar")
 
 def incident_record_form():
     st.subheader('Registro de Incidencia')

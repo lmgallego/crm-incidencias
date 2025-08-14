@@ -48,9 +48,10 @@ st.markdown("""
 
 from streamlit_option_menu import option_menu
 from utils.database import init_db
-from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, incident_record_form, manage_incident_actions_form
+from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, incident_record_form, manage_incident_actions_form, search_incident_form
 from components.analytics import analytics_incidents, analytics_verifiers, analytics_warehouses
 from components.delete import delete_test_data_form, backup_database_form, export_excel_form, restore_database_form
+from components.dashboard import dashboard_main, handle_dashboard_navigation
 import hashlib
 
 # Inicializar la base de datos
@@ -79,24 +80,62 @@ if not st.session_state.logged_in:
             st.error("Usuario o contraseña incorrectos.")
 else:
     role = st.session_state.get('role', 'coordinador')
+    
+    # Manejar navegación desde dashboard
+    dashboard_nav = handle_dashboard_navigation()
+    if dashboard_nav:
+        if dashboard_nav == 'manage_actions':
+            st.session_state['main_menu_override'] = 'Incidencias'
+            st.session_state['sub_menu_override'] = 'Gestión de Acciones'
+        elif dashboard_nav == 'new_incident':
+            st.session_state['main_menu_override'] = 'Altas'
+            st.session_state['sub_menu_override'] = 'Alta Incidencia'
+        elif dashboard_nav == 'analytics':
+            st.session_state['main_menu_override'] = 'Consultas y Analítica'
+        elif dashboard_nav == 'export':
+            st.session_state['main_menu_override'] = 'Administración'
+            st.session_state['sub_menu_override'] = 'Exportar a Excel'
+    
     with st.sidebar:
-        main_options = ["Altas", "Incidencias", "Consultas y Analítica", "Administración"]
-        icons = ["plus-circle", "exclamation-triangle", "bar-chart-line", "gear"]
+        main_options = ["Dashboard", "Altas", "Incidencias", "Consultas y Analítica", "Administración"]
+        icons = ["speedometer2", "plus-circle", "exclamation-triangle", "bar-chart-line", "gear"]
+        
+        # Determinar índice por defecto basado en navegación
+        default_idx = 0
+        if 'main_menu_override' in st.session_state:
+            override_menu = st.session_state['main_menu_override']
+            if override_menu in main_options:
+                default_idx = main_options.index(override_menu)
+            del st.session_state['main_menu_override']
+        
         main_selected = option_menu(
             menu_title="Menú Principal",
             options=main_options,
             icons=icons,
             menu_icon="cast",
-            default_index=0,
+            default_index=default_idx,
         )
-    if main_selected == "Altas":
+    
+    if main_selected == "Dashboard":
+        dashboard_main()
+    
+    elif main_selected == "Altas":
         with st.sidebar:
+            # Determinar índice por defecto para submenú
+            sub_default_idx = 0
+            if 'sub_menu_override' in st.session_state:
+                sub_options = ["Alta Coordinador", "Alta Verificador", "Alta Bodega", "Cargar Verificadores CSV", "Cargar Bodegas CSV", "Alta Incidencia"]
+                override_sub = st.session_state['sub_menu_override']
+                if override_sub in sub_options:
+                    sub_default_idx = sub_options.index(override_sub)
+                del st.session_state['sub_menu_override']
+            
             sub_selected = option_menu(
                 menu_title="Altas",
                 options=["Alta Coordinador", "Alta Verificador", "Alta Bodega", "Cargar Verificadores CSV", "Cargar Bodegas CSV", "Alta Incidencia"],
                 icons=["person", "person-check", "building", "file-earmark-spreadsheet", "file-earmark-spreadsheet", "exclamation-triangle"],
                 menu_icon="plus",
-                default_index=0,
+                default_index=sub_default_idx,
             )
 
         if sub_selected == "Alta Coordinador":
@@ -114,18 +153,29 @@ else:
 
     elif main_selected == "Incidencias":
         with st.sidebar:
+            # Determinar índice por defecto para submenú
+            sub_default_idx = 0
+            if 'sub_menu_override' in st.session_state:
+                sub_options = ["Registro de Incidencia", "Gestión de Acciones", "Buscar por Código"]
+                override_sub = st.session_state['sub_menu_override']
+                if override_sub in sub_options:
+                    sub_default_idx = sub_options.index(override_sub)
+                del st.session_state['sub_menu_override']
+            
             sub_selected = option_menu(
                 menu_title="Incidencias",
-                options=["Registro de Incidencia", "Gestión de Acciones"],
-                icons=["clipboard-plus", "pencil-square"],
+                options=["Registro de Incidencia", "Gestión de Acciones", "Buscar por Código"],
+                icons=["clipboard-plus", "pencil-square", "search"],
                 menu_icon="exclamation",
-                default_index=0,
+                default_index=sub_default_idx,
             )
 
         if sub_selected == "Registro de Incidencia":
             incident_record_form()
         elif sub_selected == "Gestión de Acciones":
             manage_incident_actions_form()
+        elif sub_selected == "Buscar por Código":
+            search_incident_form()
 
     elif main_selected == "Consultas y Analítica":
         with st.sidebar:
@@ -146,12 +196,21 @@ else:
 
     elif main_selected == "Administración":
         with st.sidebar:
+            # Determinar índice por defecto para submenú
+            sub_default_idx = 0
+            if 'sub_menu_override' in st.session_state:
+                sub_options = ["Copia de Seguridad", "Restaurar Copia", "Exportar a Excel", "Borrar Datos de Prueba"]
+                override_sub = st.session_state['sub_menu_override']
+                if override_sub in sub_options:
+                    sub_default_idx = sub_options.index(override_sub)
+                del st.session_state['sub_menu_override']
+            
             sub_selected = option_menu(
                 menu_title="Administración",
                 options=["Copia de Seguridad", "Restaurar Copia", "Exportar a Excel", "Borrar Datos de Prueba"],
                 icons=["shield-check", "arrow-clockwise", "file-earmark-excel", "trash"],
                 menu_icon="gear",
-                default_index=0,
+                default_index=sub_default_idx,
             )
 
         if sub_selected == "Copia de Seguridad":

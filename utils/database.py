@@ -88,17 +88,36 @@ def load_csv_to_warehouses(csv_file, sep=','):
             print(f"Warehouse with NIF {nif} already exists, skipping.")
     conn.close()
 
-def insert_incident(description):
+def insert_incident(description, custom_code=None):
+    """Inserta una nueva incidencia con código automático o personalizado"""
     try:
         conn = get_db_connection()
-        cursor = conn.execute('SELECT COUNT(*) FROM incidents')
-        count = cursor.fetchone()[0]
-        code = f"{count + 1:03d}"
+        
+        if custom_code:
+            # Verificar si el código personalizado ya existe
+            existing = conn.execute('SELECT id FROM incidents WHERE code = ?', (custom_code,)).fetchone()
+            if existing:
+                return {'success': False, 'error': f'El código "{custom_code}" ya existe. Por favor, use un código diferente.'}
+            code = custom_code
+        else:
+            # Generar código automático
+            cursor = conn.execute('SELECT COUNT(*) FROM incidents')
+            count = cursor.fetchone()[0]
+            code = f"{count + 1:03d}"
+            
+            # Verificar que el código automático no exista (por seguridad)
+            while conn.execute('SELECT id FROM incidents WHERE code = ?', (code,)).fetchone():
+                count += 1
+                code = f"{count + 1:03d}"
+        
         conn.execute('INSERT INTO incidents (code, description) VALUES (?, ?)', (code, description))
         conn.commit()
         logger.info(f"Inserted incident with code {code}")
+        return {'success': True, 'code': code}
+        
     except sqlite3.Error as e:
         logger.error(f"Error inserting incident: {e}")
+        return {'success': False, 'error': f'Error al guardar la incidencia: {str(e)}'}
     finally:
         conn.close()
 
@@ -289,3 +308,142 @@ def create_backup():
     except Exception as e:
         logger.error(f"Error creating backup: {e}")
         raise e
+
+def get_dashboard_stats():
+    """Obtiene estadísticas para el dashboard"""
+    conn = get_db_connection()
+    
+    # Estadísticas generales
+    stats = {}
+    
+    # Total de incidencias
+    stats['total_incidents'] = conn.execute('SELECT COUNT(*) FROM incident_records').fetchone()[0]
+    
+    # Incidencias no resueltas (pendientes)
+    stats['pending_incidents'] = conn.execute('SELECT COUNT(*) FROM incident_records WHERE status != "Solucionado"').fetchone()[0]
+    
+    # Incidencias resueltas
+    stats['resolved_incidents'] = conn.execute('SELECT COUNT(*) FROM incident_records WHERE status = "Solucionado"').fetchone()[0]
+    
+    # Incidencias por estado
+    status_query = '''
+    SELECT status, COUNT(*) as count 
+    FROM incident_records 
+    GROUP BY status 
+    ORDER BY count DESC
+    '''
+    stats['by_status'] = pd.read_sql_query(status_query, conn)
+    
+    # Incidencias recientes (últimos 7 días)
+    recent_query = '''
+    SELECT COUNT(*) 
+    FROM incident_records 
+    WHERE date >= date('now', '-7 days')
+    '''
+    stats['recent_incidents'] = conn.execute(recent_query).fetchone()[0]
+    
+    conn.close()
+    return stats
+
+def get_pending_incidents_summary():
+    """Obtiene resumen de incidencias pendientes para el dashboard"""
+    conn = get_db_connection()
+    
+    query = '''
+    SELECT 
+        ir.id,
+        ir.date,
+        w.name as warehouse,
+        w.zone as warehouse_zone,
+        v.name || " " || v.surnames as causing_verifier,
+        i.description as incident_type,
+        ac.name || " " || ac.surnames as assigned_coordinator,
+        ir.status,
+        ir.responsible
+    FROM incident_records ir 
+    JOIN warehouses w ON ir.warehouse_id = w.id 
+    JOIN verifiers v ON ir.causing_verifier_id = v.id 
+    JOIN incidents i ON ir.incident_id = i.id 
+    JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+    WHERE ir.status != "Solucionado"
+    ORDER BY ir.date DESC
+    LIMIT 10
+    '''
+    
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+def get_recent_actions():
+    """Obtiene las acciones más recientes para el dashboard"""
+    conn = get_db_connection()
+    
+    query = '''
+    SELECT 
+        ia.action_date,
+        ia.action_description,
+        ia.new_status,
+        c.name || " " || c.surnames as performed_by,
+        ir.id as incident_id,
+        w.name as warehouse
+    FROM incident_actions ia
+    JOIN coordinators c ON ia.performed_by = c.id
+    JOIN incident_records ir ON ia.incident_record_id = ir.id
+    JOIN warehouses w ON ir.warehouse_id = w.id
+    ORDER BY ia.action_date DESC
+    LIMIT 5
+    '''
+    
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+def search_incident_by_code(code):
+    """Busca una incidencia por su código único"""
+    try:
+        conn = get_db_connection()
+        incident = conn.execute('SELECT * FROM incidents WHERE code = ?', (code,)).fetchone()
+        if incident:
+            return {'success': True, 'incident': dict(incident)}
+        else:
+            return {'success': False, 'error': f'No se encontró ninguna incidencia con el código "{code}"'}
+    except sqlite3.Error as e:
+        logger.error(f"Error searching incident by code: {e}")
+        return {'success': False, 'error': f'Error al buscar la incidencia: {str(e)}'}
+    finally:
+        conn.close()
+
+def get_incident_records_by_incident_code(code):
+    """Obtiene todos los registros de incidencia asociados a un código de incidencia"""
+    try:
+        conn = get_db_connection()
+        query = '''
+        SELECT 
+            ir.*,
+            i.code as incident_code,
+            i.description as incident_description,
+            c.name || " " || c.surnames as registering_coordinator,
+            w.name as warehouse,
+            w.zone as warehouse_zone,
+            v.name || " " || v.surnames as causing_verifier,
+            ac.name || " " || ac.surnames as assigned_coordinator
+        FROM incident_records ir
+        JOIN incidents i ON ir.incident_id = i.id
+        JOIN coordinators c ON ir.registering_coordinator_id = c.id
+        JOIN warehouses w ON ir.warehouse_id = w.id
+        JOIN verifiers v ON ir.causing_verifier_id = v.id
+        JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+        WHERE i.code = ?
+        ORDER BY ir.date DESC
+        '''
+        
+        records = conn.execute(query, (code,)).fetchall()
+        if records:
+            return {'success': True, 'records': [dict(record) for record in records]}
+        else:
+            return {'success': False, 'error': f'No se encontraron registros para el código de incidencia "{code}"'}
+    except sqlite3.Error as e:
+        logger.error(f"Error getting incident records by code: {e}")
+        return {'success': False, 'error': f'Error al buscar registros: {str(e)}'}
+    finally:
+        conn.close()
