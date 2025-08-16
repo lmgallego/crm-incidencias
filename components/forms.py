@@ -448,7 +448,8 @@ def edit_incident_form():
         return
     
     # Selector de incidencia
-    incident_options = {f"{inc['code']} - {inc['description']} (ID: {inc['id']})": inc['id'] for inc in incidents}
+    # get_incidents() devuelve tuplas (id, descripción_formateada)
+    incident_options = {inc[1]: inc[0] for inc in incidents}
     selected_incident = st.selectbox('Seleccionar tipo de incidencia a editar:', list(incident_options.keys()))
     
     if selected_incident:
