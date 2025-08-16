@@ -1,6 +1,30 @@
 # Guía de Deploy - Gestión de Incidencias
 
-## Problema Identificado
+## 🚀 Nueva Solución: Supabase (Recomendado)
+
+**IMPORTANTE**: La aplicación ahora soporta Supabase como base de datos en producción, eliminando completamente los problemas de persistencia de datos.
+
+### Ventajas de Supabase:
+- ✅ **Persistencia garantizada**: Los datos nunca se pierden
+- ✅ **Escalabilidad**: Base de datos PostgreSQL en la nube
+- ✅ **Detección automática**: Se activa automáticamente en producción
+- ✅ **Fallback a SQLite**: Funciona en desarrollo local
+- ✅ **Cero configuración adicional**: Solo variables de entorno
+
+### Configuración Rápida:
+1. **Crea las tablas en Supabase**: Ejecuta `supabase_schema.sql` en el SQL Editor
+2. **Configura variables de entorno**:
+   ```bash
+   SUPABASE_URL=tu_url_de_supabase
+   SUPABASE_ANON_KEY=tu_clave_anonima
+   ```
+3. **¡Listo!** La aplicación detectará automáticamente Supabase en producción
+
+📖 **Guía completa**: Ver `SUPABASE_SETUP.md`
+
+---
+
+## 📜 Problema Anterior (Solo SQLite)
 La base de datos se borra al hacer logout y volver a hacer login en el entorno de deploy.
 
 ### Causa Principal en Streamlit Cloud
@@ -26,54 +50,76 @@ La base de datos se borra al hacer logout y volver a hacer login en el entorno d
 
 ### 3. Configuración de Deploy
 
-#### Para Streamlit Cloud:
+#### Para Streamlit Cloud (con Supabase):
 ```bash
-# Variables de entorno recomendadas
+# Variables de entorno obligatorias para Supabase
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_ANON_KEY=tu_clave_anonima_aqui
+
+# Variables de entorno opcionales
 STREAMLIT_SERVER_PORT=8501
 STREAMLIT_SHARING_MODE=true
 ```
 
-#### Para Heroku:
+#### Para Heroku (con Supabase):
 ```bash
 # Procfile
 web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
 
-# Variables de entorno
+# Variables de entorno obligatorias
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_ANON_KEY=tu_clave_anonima_aqui
 PORT=8080
 DYNO=web.1
 ```
 
-#### Para Railway:
+#### Para Railway (con Supabase):
 ```bash
-# Variables de entorno
+# Variables de entorno obligatorias
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_ANON_KEY=tu_clave_anonima_aqui
 RAILWAY_ENVIRONMENT=production
 PORT=8080
 ```
 
+#### Configuración Solo SQLite (No Recomendado):
+```bash
+# Para forzar SQLite en producción (no recomendado)
+FORCE_SUPABASE=false
+```
+
 ## Archivos Importantes para el Deploy
 
-### 1. Estructura de Archivos
+### 1. Estructura de Archivos (Actualizada)
 ```
-├── app.py                 # Aplicación principal
-├── config.py             # Configuración de entorno
-├── requirements.txt      # Dependencias
+├── app.py                    # Aplicación principal
+├── config.py                # Configuración de entorno y detección automática
+├── requirements.txt         # Dependencias (incluye supabase)
+├── supabase_config.py       # Configuración de Supabase
+├── supabase_schema.sql      # Script SQL para crear tablas en Supabase
+├── SUPABASE_SETUP.md        # Guía de configuración de Supabase
+├── migrate_to_supabase.py   # Script de migración de datos
 ├── db/
-│   ├── cavacrm.db       # Base de datos (IMPORTANTE: incluir en deploy)
-│   └── schema.sql       # Esquema de la base de datos
+│   ├── cavacrm.db          # Base de datos SQLite (fallback)
+│   └── schema.sql          # Esquema SQLite original
 ├── utils/
-│   ├── database.py      # Funciones de base de datos
-│   └── backup_restore.py # Funciones de backup
-└── components/          # Componentes de la UI
+│   ├── database.py         # Funciones SQLite originales
+│   ├── database_supabase.py # Funciones para Supabase
+│   ├── database_unified.py  # Módulo unificado (selecciona BD automáticamente)
+│   └── backup_restore.py   # Funciones de backup
+└── components/             # Componentes de la UI
 ```
 
-### 2. requirements.txt
+### 2. requirements.txt (Actualizado)
 ```
 streamlit
 streamlit-option-menu
 pandas
-sqlite3
+supabase
 openpyxl
 ```
+
+**Nota**: `sqlite3` se removió porque viene incluido con Python por defecto.
 
 ## Recomendaciones para Deploy
 

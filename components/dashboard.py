@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from utils.database import get_dashboard_stats, get_pending_incidents_summary, get_recent_actions
+from utils.database_unified import get_dashboard_stats, get_pending_incidents_summary, get_recent_actions
 from datetime import datetime
 
 def dashboard_main():

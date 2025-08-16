@@ -5,6 +5,19 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Detectar si Supabase está configurado
+def is_supabase_configured():
+    """
+    Detecta si Supabase está configurado mediante variables de entorno
+    """
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_ANON_KEY')
+    
+    # También verificar si existe el archivo de configuración
+    config_file_exists = os.path.exists('supabase_config.py')
+    
+    return bool(supabase_url and supabase_key) or config_file_exists
+
 # Detectar si estamos en un entorno de deploy
 def is_deployed_environment():
     """
@@ -37,13 +50,28 @@ def is_deployed_environment():
     
     return False
 
+# Detectar qué base de datos usar
+def should_use_supabase():
+    """
+    Determina si se debe usar Supabase en lugar de SQLite
+    """
+    # Usar Supabase si está configurado Y estamos en deploy
+    # O si se fuerza mediante variable de entorno
+    if os.getenv('FORCE_SUPABASE') == 'true':
+        return True
+    
+    return is_supabase_configured() and is_deployed_environment()
+
 # Configuración de la base de datos
 DB_CONFIG = {
     'path': 'db/cavacrm.db',
     'backup_on_deploy': True,
-    'preserve_data': True
+    'preserve_data': True,
+    'use_supabase': should_use_supabase()
 }
 
 # Logging de configuración
 logger.info(f"Deployed environment detected: {is_deployed_environment()}")
+logger.info(f"Supabase configured: {is_supabase_configured()}")
+logger.info(f"Using Supabase: {should_use_supabase()}")
 logger.info(f"Database config: {DB_CONFIG}")

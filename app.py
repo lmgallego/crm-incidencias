@@ -47,7 +47,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 from streamlit_option_menu import option_menu
-from utils.database import init_db
+from utils.database_unified import init_db
 from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, incident_record_form, manage_incident_actions_form, search_incident_form
 from components.analytics import analytics_incidents, analytics_verifiers, analytics_warehouses
 from components.delete import delete_test_data_form, backup_database_form, export_excel_form, restore_database_form

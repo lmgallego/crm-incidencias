@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from utils.database import get_all_incident_records_df, get_all_verifiers_df, get_all_warehouses_df, get_incidents_by_zone, get_incidents_by_verifier, get_incidents_by_warehouse, get_incidents_by_type, get_incidents_by_status, get_assignments_by_verifier
+from utils.database_unified import get_all_incident_records_df, get_all_verifiers_df, get_all_warehouses_df, get_incidents_by_zone, get_incidents_by_verifier, get_incidents_by_warehouse, get_incidents_by_type, get_incidents_by_status, get_assignments_by_verifier
 
 def display_filtered_table(title, df_getter):
     st.subheader(title)

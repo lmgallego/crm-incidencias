@@ -6,7 +6,7 @@ Se ejecuta automáticamente en deploys para asegurar datos básicos
 """
 
 import logging
-from utils.database import (
+from utils.database_unified import (
     get_db_connection, insert_coordinator, insert_verifier, 
     insert_warehouse, insert_incident
 )
