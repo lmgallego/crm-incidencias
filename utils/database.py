@@ -4,11 +4,18 @@ import os
 import logging
 import datetime
 from .backup_restore import backup_db
+try:
+    from config import is_deployed_environment, DB_CONFIG
+except ImportError:
+    # Fallback si no existe config.py
+    def is_deployed_environment():
+        return False
+    DB_CONFIG = {'path': 'db/cavacrm.db', 'preserve_data': True}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-DB_PATH = 'db/cavacrm.db'
+DB_PATH = DB_CONFIG['path']
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -16,19 +23,88 @@ def get_db_connection():
     return conn
 
 def init_db():
+    # Verificar entorno y configuración
+    deployed = is_deployed_environment()
+    preserve_data = DB_CONFIG.get('preserve_data', True)
+    
+    logger.info(f"Environment - Deployed: {deployed}, Preserve data: {preserve_data}")
+    
+    # Verificar si la base de datos ya existe y tiene datos
+    db_exists = os.path.exists(DB_PATH)
+    logger.info(f"Database exists: {db_exists}")
+    
+    # Crear directorio si no existe
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    with open(os.path.join('db', 'schema.sql'), 'r', encoding='utf-8') as f:
-        cursor.executescript(f.read())
-    conn.commit()
-    # Chequeo de integridad
-    integrity_result = cursor.execute('PRAGMA integrity_check').fetchone()[0]
-    if integrity_result != 'ok':
-        logger.error(f"Integrity check failed: {integrity_result}")
-        raise sqlite3.IntegrityError("Database integrity check failed")
+    
+    # Verificar si hay datos existentes antes de ejecutar el schema
+    existing_records = 0
+    tables_exist = False
+    
+    if db_exists:
+        try:
+            # Verificar si las tablas existen
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='coordinators'")
+            tables_exist = cursor.fetchone() is not None
+            
+            if tables_exist:
+                count_result = cursor.execute('SELECT COUNT(*) FROM coordinators').fetchone()
+                existing_records = count_result[0] if count_result else 0
+                logger.info(f"Existing coordinators in database: {existing_records}")
+            else:
+                logger.info("Database file exists but tables don't exist yet")
+        except sqlite3.OperationalError as e:
+            logger.info(f"Database tables don't exist yet: {e}")
+            tables_exist = False
     else:
-        logger.info("Database integrity check passed")
+        logger.info("Creating new database...")
+    
+    # Crear backup automático si estamos en deploy y hay datos
+    if deployed and existing_records > 0 and DB_CONFIG.get('backup_on_deploy', True):
+        try:
+            backup_path = backup_db()
+            logger.info(f"Automatic backup created before init: {backup_path}")
+        except Exception as e:
+            logger.warning(f"Could not create automatic backup: {e}")
+    
+    # Solo ejecutar el schema si las tablas no existen
+    # En entornos de deploy, ser extra cuidadoso
+    if not tables_exist or (not deployed and not preserve_data):
+        logger.info("Executing schema to create/update tables...")
+        with open(os.path.join('db', 'schema.sql'), 'r', encoding='utf-8') as f:
+            cursor.executescript(f.read())
+        conn.commit()
+        logger.info("Schema executed successfully")
+    else:
+        logger.info("Tables already exist, skipping schema execution to preserve data")
+    
+    # Verificar datos después de la inicialización
+    try:
+        final_count = cursor.execute('SELECT COUNT(*) FROM coordinators').fetchone()[0]
+        logger.info(f"Final coordinators count after init: {final_count}")
+        
+        # Verificar otras tablas importantes
+        incident_count = cursor.execute('SELECT COUNT(*) FROM incident_records').fetchone()[0]
+        logger.info(f"Total incident records: {incident_count}")
+        
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not count records after init: {e}")
+    
+    # Chequeo de integridad
+    try:
+        integrity_result = cursor.execute('PRAGMA integrity_check').fetchone()[0]
+        if integrity_result != 'ok':
+            logger.error(f"Integrity check failed: {integrity_result}")
+            raise sqlite3.IntegrityError("Database integrity check failed")
+        else:
+            logger.info("Database integrity check passed")
+    except Exception as e:
+        logger.error(f"Error during integrity check: {e}")
+    
     conn.close()
+    logger.info("Database initialization completed successfully")
 
 def insert_coordinator(name, surnames):
     try:

@@ -53,9 +53,26 @@ from components.analytics import analytics_incidents, analytics_verifiers, analy
 from components.delete import delete_test_data_form, backup_database_form, export_excel_form, restore_database_form
 from components.dashboard import dashboard_main, handle_dashboard_navigation
 import hashlib
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Inicializar la base de datos
+logger.info("Initializing database from app.py...")
 init_db()
+logger.info("Database initialization completed.")
+
+# Inicializar datos por defecto en entornos de deploy
+try:
+    from config import is_deployed_environment
+    if is_deployed_environment():
+        from init_default_data import run_default_initialization
+        logger.info("Deploy environment detected, checking for default data...")
+        run_default_initialization()
+except ImportError:
+    logger.info("Default data initialization not available")
 
 # Login
 if 'logged_in' not in st.session_state:
@@ -97,6 +114,16 @@ else:
             st.session_state['sub_menu_override'] = 'Exportar a Excel'
     
     with st.sidebar:
+        # Botón de logout en la parte superior
+        if st.button("🚪 Cerrar Sesión", use_container_width=True, type="secondary"):
+            # Limpiar todas las variables de sesión relacionadas con login
+            for key in list(st.session_state.keys()):
+                if key in ['logged_in', 'role', 'main_menu_override', 'sub_menu_override']:
+                    del st.session_state[key]
+            st.rerun()
+        
+        st.markdown("---")
+        
         main_options = ["Dashboard", "Altas", "Incidencias", "Consultas y Analítica", "Administración"]
         icons = ["speedometer2", "plus-circle", "exclamation-triangle", "bar-chart-line", "gear"]
         
