@@ -98,22 +98,26 @@ def insert_verifier(name, surnames, phone, zone):
         logger.error(f"Error inserting verifier: {e}")
         return False
 
-def insert_warehouse(name, nif, zone):
+def insert_warehouse(name, codigo_consejo, zone):
     try:
         client = get_supabase_connection()
         result = client.table('warehouses').insert({
             'name': name,
-            'nif': nif,
+            'codigo_consejo': codigo_consejo,
             'zone': zone
         }).execute()
-        logger.info(f"Inserted warehouse: {name} with NIF {nif}")
+        logger.info(f"Inserted warehouse: {name} with Código Consejo {codigo_consejo}")
         return True
     except Exception as e:
         logger.error(f"Error inserting warehouse: {e}")
         return False
 
 def load_csv_to_verifiers(csv_file, sep=','):
-    df = pd.read_csv(csv_file, sep=sep)
+    # Resetear el puntero del archivo al inicio
+    csv_file.seek(0)
+    df = pd.read_csv(csv_file, sep=sep, encoding='utf-8-sig')
+    # Limpiar nombres de columnas (eliminar espacios, BOM y caracteres especiales)
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('ï»¿', '')
     client = get_supabase_connection()
     
     for _, row in df.iterrows():
@@ -129,19 +133,23 @@ def load_csv_to_verifiers(csv_file, sep=','):
             print(f"Verifier {name} {surnames} already exists, skipping.")
 
 def load_csv_to_warehouses(csv_file, sep=','):
-    df = pd.read_csv(csv_file, sep=sep, encoding='latin1')
+    # Resetear el puntero del archivo al inicio
+    csv_file.seek(0)
+    df = pd.read_csv(csv_file, sep=sep, encoding='utf-8-sig')
+    # Limpiar nombres de columnas (eliminar espacios, BOM y caracteres especiales)
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('ï»¿', '')
     client = get_supabase_connection()
     
     for _, row in df.iterrows():
-        nif = row['nif']
+        codigo_consejo = row['codigo_consejo']
         
         # Verificar si ya existe
-        existing = client.table('warehouses').select('id').eq('nif', nif).execute()
+        existing = client.table('warehouses').select('id').eq('codigo_consejo', codigo_consejo).execute()
         
         if not existing.data:
-            insert_warehouse(row['name'], nif, row.get('zone', ''))
+            insert_warehouse(row['name'], codigo_consejo, row.get('zone', ''))
         else:
-            print(f"Warehouse with NIF {nif} already exists, skipping.")
+            print(f"Warehouse with Código Consejo {codigo_consejo} already exists, skipping.")
 
 def insert_incident(description, custom_code=None):
     """Inserta una nueva incidencia con código automático o personalizado"""
@@ -184,7 +192,7 @@ def get_coordinators():
     try:
         client = get_supabase_connection()
         result = client.table('coordinators').select('id, name, surnames').execute()
-        return [(row['id'], f"{row['name']} {row['surnames']}") for row in result.data]
+        return result.data
     except Exception as e:
         logger.error(f"Error getting coordinators: {e}")
         return []
@@ -192,8 +200,8 @@ def get_coordinators():
 def get_verifiers():
     try:
         client = get_supabase_connection()
-        result = client.table('verifiers').select('id, name, surnames').execute()
-        return [(row['id'], f"{row['name']} {row['surnames']}") for row in result.data]
+        result = client.table('verifiers').select('id, name, surnames, phone, zone').execute()
+        return result.data
     except Exception as e:
         logger.error(f"Error getting verifiers: {e}")
         return []
@@ -201,8 +209,8 @@ def get_verifiers():
 def get_warehouses():
     try:
         client = get_supabase_connection()
-        result = client.table('warehouses').select('id, name').execute()
-        return [(row['id'], row['name']) for row in result.data]
+        result = client.table('warehouses').select('id, name, codigo_consejo, zone').execute()
+        return result.data
     except Exception as e:
         logger.error(f"Error getting warehouses: {e}")
         return []
@@ -240,14 +248,24 @@ def get_incident_records():
     try:
         client = get_supabase_connection()
         result = client.table('incident_records').select(
-            'id, date, incidents(code, description)'
-        ).execute()
+            'id, date, registering_coordinator_id, warehouse_id, causing_verifier_id, incident_id, assigned_coordinator_id, explanation, status, responsible, '
+            'coordinators!registering_coordinator_id(name, surnames), '
+            'warehouses(name), '
+            'verifiers(name, surnames), '
+            'incidents(code, description), '
+            'coordinators!assigned_coordinator_id(name, surnames)'
+        ).order('date', desc=True).execute()
         
         records = []
-        for row in result.data:
-            incident_info = row['incidents']
-            incident_text = f"{incident_info['code']} - {incident_info['description']}" if incident_info else "N/A"
-            records.append((row['id'], f"ID: {row['id']} - Fecha: {row['date']} - Incidencia: {incident_text}"))
+        for record in result.data:
+            registering_coordinator = f"{record['coordinators']['name']} {record['coordinators']['surnames']}"
+            warehouse = record['warehouses']['name']
+            causing_verifier = f"{record['verifiers']['name']} {record['verifiers']['surnames']}"
+            incident = f"{record['incidents']['code']} - {record['incidents']['description']}"
+            assigned_coordinator = f"{record['coordinators']['name']} {record['coordinators']['surnames']}"
+            
+            display_text = f"ID: {record['id']} - Fecha: {record['date']} - Incidencia: {incident} - Bodega: {warehouse} - Verificador: {causing_verifier} - Coordinador: {assigned_coordinator}"
+            records.append((record['id'], display_text))
         
         return records
     except Exception as e:
@@ -685,3 +703,208 @@ def get_incident_records_by_incident_code(code):
     except Exception as e:
         logger.error(f"Error getting incident records by code: {e}")
         return {'success': False, 'error': f'Error al buscar registros: {str(e)}'}
+
+# Funciones de actualización/edición
+def update_coordinator(coordinator_id, name, surnames):
+    """Actualizar un coordinador existente"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('coordinators').update({
+            'name': name,
+            'surnames': surnames
+        }).eq('id', coordinator_id).execute()
+        
+        if result.data:
+            logger.info(f"Updated coordinator ID {coordinator_id}: {name} {surnames}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error updating coordinator: {e}")
+        return False
+
+def update_verifier(verifier_id, name, surnames, phone, zone):
+    """Actualizar un verificador existente"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('verifiers').update({
+            'name': name,
+            'surnames': surnames,
+            'phone': phone,
+            'zone': zone
+        }).eq('id', verifier_id).execute()
+        
+        if result.data:
+            logger.info(f"Updated verifier ID {verifier_id}: {name} {surnames}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error updating verifier: {e}")
+        return False
+
+def update_warehouse(warehouse_id, name, codigo_consejo, zone):
+    """Actualizar una bodega existente"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('warehouses').update({
+            'name': name,
+            'codigo_consejo': codigo_consejo,
+            'zone': zone
+        }).eq('id', warehouse_id).execute()
+        
+        if result.data:
+            logger.info(f"Updated warehouse ID {warehouse_id}: {name}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error updating warehouse: {e}")
+        return False
+
+def update_incident(incident_id, code, description):
+    """Actualizar un tipo de incidencia existente"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('incidents').update({
+            'code': code,
+            'description': description
+        }).eq('id', incident_id).execute()
+        
+        if result.data:
+            logger.info(f"Updated incident ID {incident_id}: {code}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error updating incident: {e}")
+        return False
+
+# Funciones para obtener registros individuales
+def get_coordinator_by_id(coordinator_id):
+    """Obtener un coordinador por ID"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('coordinators').select('*').eq('id', coordinator_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"Error getting coordinator: {e}")
+        return None
+
+def get_verifier_by_id(verifier_id):
+    """Obtener un verificador por ID"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('verifiers').select('*').eq('id', verifier_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"Error getting verifier: {e}")
+        return None
+
+def get_warehouse_by_id(warehouse_id):
+    """Obtener una bodega por ID"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('warehouses').select('*').eq('id', warehouse_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"Error getting warehouse: {e}")
+        return None
+
+def get_incident_by_id(incident_id):
+    """Obtener un tipo de incidencia por ID"""
+    try:
+        client = get_supabase_connection()
+        result = client.table('incidents').select('*').eq('id', incident_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"Error getting incident: {e}")
+        return None
+
+def get_pending_incidents_by_coordinator(coordinator_id=None):
+    """Obtiene incidencias pendientes filtradas por coordinador asignado"""
+    try:
+        client = get_supabase_connection()
+        
+        if coordinator_id:
+            result = client.table('incident_records').select(
+                'id, date, status, responsible, '
+                'warehouses(name, zone), verifiers(name, surnames), '
+                'incidents(description), coordinators(name, surnames)'
+            ).neq('status', 'Solucionado').eq('assigned_coordinator_id', coordinator_id).order('date', desc=True).limit(10).execute()
+        else:
+            result = client.table('incident_records').select(
+                'id, date, status, responsible, '
+                'warehouses(name, zone), verifiers(name, surnames), '
+                'incidents(description), coordinators(name, surnames)'
+            ).neq('status', 'Solucionado').order('date', desc=True).limit(10).execute()
+        
+        processed_data = []
+        for row in result.data:
+            warehouse = row['warehouses']
+            verifier = row['verifiers']
+            incident = row['incidents']
+            coordinator = row['coordinators']
+            
+            processed_data.append({
+                'id': row['id'],
+                'date': row['date'],
+                'warehouse': warehouse['name'] if warehouse else "N/A",
+                'warehouse_zone': warehouse['zone'] if warehouse else "N/A",
+                'causing_verifier': f"{verifier['name']} {verifier['surnames']}" if verifier else "N/A",
+                'incident_type': incident['description'] if incident else "N/A",
+                'assigned_coordinator': f"{coordinator['name']} {coordinator['surnames']}" if coordinator else "N/A",
+                'status': row['status'],
+                'responsible': row['responsible']
+            })
+        
+        return pd.DataFrame(processed_data)
+    except Exception as e:
+        logger.error(f"Error getting pending incidents by coordinator: {e}")
+        return pd.DataFrame()
+
+def get_filtered_pending_incidents(coordinator_id=None, status=None, days=None):
+    """Obtiene incidencias pendientes con filtros múltiples"""
+    try:
+        client = get_supabase_connection()
+        
+        # Construir la consulta base
+        query = client.table('incident_records').select(
+            'id, date, status, responsible, '
+            'warehouses(name, zone), verifiers(name, surnames), '
+            'incidents(description), coordinators(name, surnames)'
+        ).neq('status', 'Solucionado')
+        
+        # Agregar filtros según los parámetros
+        if coordinator_id:
+            query = query.eq('assigned_coordinator_id', coordinator_id)
+        
+        if status:
+            query = query.eq('status', status)
+        
+        if days:
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            query = query.gte('date', cutoff_date)
+        
+        result = query.order('date', desc=True).limit(20).execute()
+        
+        processed_data = []
+        for row in result.data:
+            warehouse = row['warehouses']
+            verifier = row['verifiers']
+            incident = row['incidents']
+            coordinator = row['coordinators']
+            
+            processed_data.append({
+                'id': row['id'],
+                'date': row['date'],
+                'warehouse': warehouse['name'] if warehouse else "N/A",
+                'warehouse_zone': warehouse['zone'] if warehouse else "N/A",
+                'causing_verifier': f"{verifier['name']} {verifier['surnames']}" if verifier else "N/A",
+                'incident_type': incident['description'] if incident else "N/A",
+                'assigned_coordinator': f"{coordinator['name']} {coordinator['surnames']}" if coordinator else "N/A",
+                'status': row['status'],
+                'responsible': row['responsible']
+            })
+        
+        return pd.DataFrame(processed_data)
+    except Exception as e:
+        logger.error(f"Error getting filtered pending incidents: {e}")
+        return pd.DataFrame()

@@ -128,19 +128,23 @@ def insert_verifier(name, surnames, phone, zone):
     finally:
         conn.close()
 
-def insert_warehouse(name, nif, zone):
+def insert_warehouse(name, codigo_consejo, zone):
     try:
         conn = get_db_connection()
-        conn.execute('INSERT INTO warehouses (name, nif, zone) VALUES (?, ?, ?)', (name, nif, zone))
+        conn.execute('INSERT INTO warehouses (name, codigo_consejo, zone) VALUES (?, ?, ?)', (name, codigo_consejo, zone))
         conn.commit()
-        logger.info(f"Inserted warehouse: {name} with NIF {nif}")
+        logger.info(f"Inserted warehouse: {name} with Código Consejo {codigo_consejo}")
     except sqlite3.Error as e:
         logger.error(f"Error inserting warehouse: {e}")
     finally:
         conn.close()
 
 def load_csv_to_verifiers(csv_file, sep=','):
-    df = pd.read_csv(csv_file, sep=sep)
+    # Resetear el puntero del archivo al inicio
+    csv_file.seek(0)
+    df = pd.read_csv(csv_file, sep=sep, encoding='utf-8-sig')
+    # Limpiar nombres de columnas (eliminar espacios, BOM y caracteres especiales)
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('ï»¿', '')
     conn = get_db_connection()
     for _, row in df.iterrows():
         name = row['name']
@@ -153,15 +157,19 @@ def load_csv_to_verifiers(csv_file, sep=','):
     conn.close()
 
 def load_csv_to_warehouses(csv_file, sep=','):
-    df = pd.read_csv(csv_file, sep=sep, encoding='latin1')
+    # Resetear el puntero del archivo al inicio
+    csv_file.seek(0)
+    df = pd.read_csv(csv_file, sep=sep, encoding='utf-8-sig')
+    # Limpiar nombres de columnas (eliminar espacios, BOM y caracteres especiales)
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('ï»¿', '')
     conn = get_db_connection()
     for _, row in df.iterrows():
-        nif = row['nif']
-        cursor = conn.execute('SELECT COUNT(*) FROM warehouses WHERE nif = ?', (nif,))
+        codigo_consejo = row['codigo_consejo']
+        cursor = conn.execute('SELECT COUNT(*) FROM warehouses WHERE codigo_consejo = ?', (codigo_consejo,))
         if cursor.fetchone()[0] == 0:
-            insert_warehouse(row['name'], nif, row.get('zone', ''))
+            insert_warehouse(row['name'], codigo_consejo, row.get('zone', ''))
         else:
-            print(f"Warehouse with NIF {nif} already exists, skipping.")
+            print(f"Warehouse with Código Consejo {codigo_consejo} already exists, skipping.")
     conn.close()
 
 def insert_incident(description, custom_code=None):
@@ -200,8 +208,8 @@ def insert_incident(description, custom_code=None):
 def get_coordinators():
     try:
         conn = get_db_connection()
-        coordinators = conn.execute('SELECT id, name || " " || surnames AS full_name FROM coordinators').fetchall()
-        return [(row['id'], row['full_name']) for row in coordinators]
+        coordinators = conn.execute('SELECT id, name, surnames FROM coordinators').fetchall()
+        return [dict(row) for row in coordinators]
     except sqlite3.Error as e:
         print(f"Error getting coordinators: {e}")
         return []
@@ -210,15 +218,15 @@ def get_coordinators():
 
 def get_verifiers():
     conn = get_db_connection()
-    verifiers = conn.execute('SELECT id, name || " " || surnames AS full_name FROM verifiers').fetchall()
+    verifiers = conn.execute('SELECT id, name, surnames, phone, zone FROM verifiers').fetchall()
     conn.close()
-    return [(row['id'], row['full_name']) for row in verifiers]
+    return [dict(row) for row in verifiers]
 
 def get_warehouses():
     conn = get_db_connection()
-    warehouses = conn.execute('SELECT id, name FROM warehouses').fetchall()
+    warehouses = conn.execute('SELECT id, name, codigo_consejo, zone FROM warehouses').fetchall()
     conn.close()
-    return [(row['id'], row['name']) for row in warehouses]
+    return [dict(row) for row in warehouses]
 
 def get_incidents():
     conn = get_db_connection()
@@ -240,9 +248,9 @@ def insert_incident_record(date, registering_coordinator_id, warehouse_id, causi
 
 def get_incident_records():
     conn = get_db_connection()
-    records = conn.execute('SELECT ir.id, ir.date, c.name || " " || c.surnames AS registering_coordinator, w.name AS warehouse, v.name || " " || v.surnames AS causing_verifier, i.code || " - " || i.description AS incident, ac.name || " " || ac.surnames AS assigned_coordinator, ir.explanation, ir.status, ir.responsible FROM incident_records ir JOIN coordinators c ON ir.registering_coordinator_id = c.id JOIN warehouses w ON ir.warehouse_id = w.id JOIN verifiers v ON ir.causing_verifier_id = v.id JOIN incidents i ON ir.incident_id = i.id JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id').fetchall()
+    records = conn.execute('SELECT ir.id, ir.date, c.name || " " || c.surnames AS registering_coordinator, w.name AS warehouse, v.name || " " || v.surnames AS causing_verifier, i.code || " - " || i.description AS incident, ac.name || " " || ac.surnames AS assigned_coordinator, ir.explanation, ir.status, ir.responsible FROM incident_records ir JOIN coordinators c ON ir.registering_coordinator_id = c.id JOIN warehouses w ON ir.warehouse_id = w.id JOIN verifiers v ON ir.causing_verifier_id = v.id JOIN incidents i ON ir.incident_id = i.id JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id ORDER BY ir.date DESC').fetchall()
     conn.close()
-    return [(row['id'], f"ID: {row['id']} - Fecha: {row['date']} - Incidencia: {row['incident']}") for row in records]
+    return [(row['id'], f"ID: {row['id']} - Fecha: {row['date']} - Incidencia: {row['incident']} - Bodega: {row['warehouse']} - Verificador: {row['causing_verifier']} - Coordinador: {row['assigned_coordinator']}") for row in records]
 
 def insert_incident_action(incident_record_id, action_date, action_description, new_status, performed_by):
     try:
@@ -521,5 +529,210 @@ def get_incident_records_by_incident_code(code):
     except sqlite3.Error as e:
         logger.error(f"Error getting incident records by code: {e}")
         return {'success': False, 'error': f'Error al buscar registros: {str(e)}'}
+    finally:
+        conn.close()
+
+# Funciones de actualización/edición
+def update_coordinator(coordinator_id, name, surnames):
+    """Actualizar un coordinador existente"""
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE coordinators SET name = ?, surnames = ? WHERE id = ?', (name, surnames, coordinator_id))
+        conn.commit()
+        logger.info(f"Updated coordinator ID {coordinator_id}: {name} {surnames}")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error updating coordinator: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_verifier(verifier_id, name, surnames, phone, zone):
+    """Actualizar un verificador existente"""
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE verifiers SET name = ?, surnames = ?, phone = ?, zone = ? WHERE id = ?', 
+                     (name, surnames, phone, zone, verifier_id))
+        conn.commit()
+        logger.info(f"Updated verifier ID {verifier_id}: {name} {surnames}")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error updating verifier: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_warehouse(warehouse_id, name, codigo_consejo, zone):
+    """Actualizar una bodega existente"""
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE warehouses SET name = ?, codigo_consejo = ?, zone = ? WHERE id = ?', 
+                     (name, codigo_consejo, zone, warehouse_id))
+        conn.commit()
+        logger.info(f"Updated warehouse ID {warehouse_id}: {name}")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error updating warehouse: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_incident(incident_id, code, description):
+    """Actualizar un tipo de incidencia existente"""
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE incidents SET code = ?, description = ? WHERE id = ?', 
+                     (code, description, incident_id))
+        conn.commit()
+        logger.info(f"Updated incident ID {incident_id}: {code}")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error updating incident: {e}")
+        return False
+    finally:
+        conn.close()
+
+# Funciones para obtener registros individuales
+def get_coordinator_by_id(coordinator_id):
+    """Obtener un coordinador por ID"""
+    try:
+        conn = get_db_connection()
+        coordinator = conn.execute('SELECT * FROM coordinators WHERE id = ?', (coordinator_id,)).fetchone()
+        return dict(coordinator) if coordinator else None
+    except sqlite3.Error as e:
+        logger.error(f"Error getting coordinator: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_verifier_by_id(verifier_id):
+    """Obtener un verificador por ID"""
+    try:
+        conn = get_db_connection()
+        verifier = conn.execute('SELECT * FROM verifiers WHERE id = ?', (verifier_id,)).fetchone()
+        return dict(verifier) if verifier else None
+    except sqlite3.Error as e:
+        logger.error(f"Error getting verifier: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_warehouse_by_id(warehouse_id):
+    """Obtener una bodega por ID"""
+    try:
+        conn = get_db_connection()
+        warehouse = conn.execute('SELECT * FROM warehouses WHERE id = ?', (warehouse_id,)).fetchone()
+        return dict(warehouse) if warehouse else None
+    except sqlite3.Error as e:
+        logger.error(f"Error getting warehouse: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_incident_by_id(incident_id):
+    """Obtener un tipo de incidencia por ID"""
+    try:
+        conn = get_db_connection()
+        incident = conn.execute('SELECT * FROM incidents WHERE id = ?', (incident_id,)).fetchone()
+        return dict(incident) if incident else None
+    except sqlite3.Error as e:
+        logger.error(f"Error getting incident: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_pending_incidents_by_coordinator(coordinator_id=None):
+    """Obtiene incidencias pendientes filtradas por coordinador asignado"""
+    try:
+        conn = get_db_connection()
+        
+        if coordinator_id:
+            query = '''
+            SELECT ir.id, ir.date, ir.status, ir.responsible,
+                   w.name as warehouse, w.zone as warehouse_zone,
+                   v.name || " " || v.surnames as causing_verifier,
+                   i.description as incident_type,
+                   ac.name || " " || ac.surnames as assigned_coordinator
+            FROM incident_records ir
+            JOIN warehouses w ON ir.warehouse_id = w.id
+            JOIN verifiers v ON ir.causing_verifier_id = v.id
+            JOIN incidents i ON ir.incident_id = i.id
+            JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+            WHERE ir.status != 'Solucionado' AND ir.assigned_coordinator_id = ?
+            ORDER BY ir.date DESC
+            LIMIT 10
+            '''
+            records = conn.execute(query, (coordinator_id,)).fetchall()
+        else:
+            query = '''
+            SELECT ir.id, ir.date, ir.status, ir.responsible,
+                   w.name as warehouse, w.zone as warehouse_zone,
+                   v.name || " " || v.surnames as causing_verifier,
+                   i.description as incident_type,
+                   ac.name || " " || ac.surnames as assigned_coordinator
+            FROM incident_records ir
+            JOIN warehouses w ON ir.warehouse_id = w.id
+            JOIN verifiers v ON ir.causing_verifier_id = v.id
+            JOIN incidents i ON ir.incident_id = i.id
+            JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+            WHERE ir.status != 'Solucionado'
+            ORDER BY ir.date DESC
+            LIMIT 10
+            '''
+            records = conn.execute(query).fetchall()
+        
+        import pandas as pd
+        return pd.DataFrame([dict(record) for record in records])
+    except sqlite3.Error as e:
+        logger.error(f"Error getting pending incidents by coordinator: {e}")
+        import pandas as pd
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+def get_filtered_pending_incidents(coordinator_id=None, status=None, days=None):
+    """Obtiene incidencias pendientes con filtros múltiples"""
+    try:
+        conn = get_db_connection()
+        
+        # Construir la consulta base
+        query = '''
+        SELECT ir.id, ir.date, ir.status, ir.responsible,
+               w.name as warehouse, w.zone as warehouse_zone,
+               v.name || " " || v.surnames as causing_verifier,
+               i.description as incident_type,
+               ac.name || " " || ac.surnames as assigned_coordinator
+        FROM incident_records ir
+        JOIN warehouses w ON ir.warehouse_id = w.id
+        JOIN verifiers v ON ir.causing_verifier_id = v.id
+        JOIN incidents i ON ir.incident_id = i.id
+        JOIN coordinators ac ON ir.assigned_coordinator_id = ac.id
+        WHERE ir.status != 'Solucionado'
+        '''
+        
+        params = []
+        
+        # Agregar filtros según los parámetros
+        if coordinator_id:
+            query += " AND ir.assigned_coordinator_id = ?"
+            params.append(coordinator_id)
+        
+        if status:
+            query += " AND ir.status = ?"
+            params.append(status)
+        
+        if days:
+            query += " AND ir.date >= date('now', '-{} days')".format(days)
+        
+        query += " ORDER BY ir.date DESC LIMIT 20"
+        
+        records = conn.execute(query, params).fetchall()
+        
+        import pandas as pd
+        return pd.DataFrame([dict(record) for record in records])
+    except sqlite3.Error as e:
+        logger.error(f"Error getting filtered pending incidents: {e}")
+        import pandas as pd
+        return pd.DataFrame()
     finally:
         conn.close()

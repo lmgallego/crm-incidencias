@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS verifiers (
 CREATE TABLE IF NOT EXISTS warehouses (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
-    nif VARCHAR(50),
+    codigo_consejo VARCHAR(50),
     zone VARCHAR(100)
 );
 

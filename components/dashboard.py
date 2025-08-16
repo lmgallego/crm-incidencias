@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from utils.database_unified import get_dashboard_stats, get_pending_incidents_summary, get_recent_actions
+from utils.database_unified import get_dashboard_stats, get_pending_incidents_summary, get_recent_actions, get_coordinators, get_pending_incidents_by_coordinator, get_filtered_pending_incidents
 from datetime import datetime
 
 def dashboard_main():
@@ -61,13 +61,73 @@ def dashboard_main():
         # Sección de incidencias pendientes
         st.subheader("🚨 Incidencias Pendientes")
         
-        if pending_incidents.empty:
-            st.success("🎉 ¡Excelente! No hay incidencias pendientes.")
+        # Filtros múltiples
+        col_filter1, col_filter2, col_filter3 = st.columns(3)
+        
+        with col_filter1:
+            # Filtro por coordinador
+            coordinators = get_coordinators()
+            coordinator_options = [(None, "Todos los coordinadores")] + [(coord['id'], f"{coord['name']} {coord['surnames']}") for coord in coordinators]
+            
+            selected_coordinator = st.selectbox(
+                "Coordinador asignado:",
+                options=coordinator_options,
+                format_func=lambda x: x[1],
+                key="coordinator_filter"
+            )
+        
+        with col_filter2:
+            # Filtro por estado
+            status_options = [
+                (None, "Todos los estados"),
+                ("Pendiente", "Pendiente"),
+                ("En Proceso", "En Proceso"),
+                ("Esperando Verificación", "Esperando Verificación")
+            ]
+            
+            selected_status = st.selectbox(
+                "Estado:",
+                options=status_options,
+                format_func=lambda x: x[1],
+                key="status_filter"
+            )
+        
+        with col_filter3:
+            # Filtro por fecha (últimos N días)
+            days_options = [
+                (None, "Todas las fechas"),
+                (7, "Últimos 7 días"),
+                (15, "Últimos 15 días"),
+                (30, "Últimos 30 días")
+            ]
+            
+            selected_days = st.selectbox(
+                "Período:",
+                options=days_options,
+                format_func=lambda x: x[1],
+                key="days_filter"
+            )
+        
+        # Obtener incidencias filtradas con múltiples criterios
+        coordinator_id = selected_coordinator[0] if selected_coordinator[0] is not None else None
+        status_filter = selected_status[0] if selected_status[0] is not None else None
+        days_filter = selected_days[0] if selected_days[0] is not None else None
+        
+        filtered_incidents = get_filtered_pending_incidents(coordinator_id, status_filter, days_filter)
+        
+        if filtered_incidents.empty:
+            if coordinator_id:
+                st.success(f"🎉 ¡Excelente! No hay incidencias pendientes para {selected_coordinator[1]}.")
+            else:
+                st.success("🎉 ¡Excelente! No hay incidencias pendientes.")
         else:
-            st.info(f"Se muestran las {len(pending_incidents)} incidencias más recientes pendientes de resolución.")
+            if coordinator_id:
+                st.info(f"Se muestran las {len(filtered_incidents)} incidencias pendientes para {selected_coordinator[1]}.")
+            else:
+                st.info(f"Se muestran las {len(filtered_incidents)} incidencias más recientes pendientes de resolución.")
             
             # Mostrar tabla de incidencias pendientes
-            for idx, incident in pending_incidents.iterrows():
+            for idx, incident in filtered_incidents.iterrows():
                 with st.container():
                     # Crear un expander para cada incidencia
                     status_color = {
@@ -100,7 +160,7 @@ def dashboard_main():
                                 type="primary"
                             ):
                                 # Guardar el ID de la incidencia en session_state para navegación
-                                st.session_state['selected_incident_id'] = incident['id']
+                                st.session_state['selected_incident_record_id'] = incident['id']
                                 st.session_state['navigate_to_actions'] = True
                                 st.rerun()
     

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS verifiers (
 CREATE TABLE IF NOT EXISTS warehouses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    nif TEXT NOT NULL,
+    codigo_consejo TEXT,
     zone TEXT
 );
 

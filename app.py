@@ -43,12 +43,33 @@ st.markdown("""
             background-color: #D3D3D3 !important;
             color: #000000 !important;
         }
+        /* Estilo específico para el botón de cerrar sesión */
+        .logout-button {
+            background: linear-gradient(135deg, #dc3545, #c82333) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 8px !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 600 !important;
+            font-size: 0.9rem !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
+        }
+        .logout-button:hover {
+            background: linear-gradient(135deg, #c82333, #a71e2a) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3) !important;
+        }
+        .logout-button:active {
+            transform: translateY(0) !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 from streamlit_option_menu import option_menu
 from utils.database_unified import init_db
-from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, incident_record_form, manage_incident_actions_form, search_incident_form
+from components.forms import coordinator_form, verifier_form, warehouse_form, csv_upload, incident_form, search_incident_form, incident_record_form, manage_incident_actions_form, edit_coordinator_form, edit_verifier_form, edit_warehouse_form, edit_incident_form
 from components.analytics import analytics_incidents, analytics_verifiers, analytics_warehouses
 from components.delete import delete_test_data_form, backup_database_form, export_excel_form, restore_database_form
 from components.dashboard import dashboard_main, handle_dashboard_navigation
@@ -114,18 +135,44 @@ else:
             st.session_state['sub_menu_override'] = 'Exportar a Excel'
     
     with st.sidebar:
-        # Botón de logout en la parte superior
-        if st.button("🚪 Cerrar Sesión", use_container_width=True, type="secondary"):
+        # Botón de logout en la parte superior con estilo personalizado
+        st.markdown("""
+        <style>
+        div.stButton > button:first-child {
+            background: linear-gradient(135deg, #dc3545, #c82333) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 8px !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 600 !important;
+            font-size: 0.9rem !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
+            width: 100% !important;
+        }
+        div.stButton > button:first-child:hover {
+            background: linear-gradient(135deg, #c82333, #a71e2a) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3) !important;
+        }
+        div.stButton > button:first-child:active {
+            transform: translateY(0) !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
             # Limpiar todas las variables de sesión relacionadas con login
             for key in list(st.session_state.keys()):
-                if key in ['logged_in', 'role', 'main_menu_override', 'sub_menu_override']:
+                if key in ['logged_in', 'role', 'main_menu_override', 'sub_menu_override', 'in_manage_actions']:
                     del st.session_state[key]
             st.rerun()
         
         st.markdown("---")
         
-        main_options = ["Dashboard", "Altas", "Incidencias", "Consultas y Analítica", "Administración"]
-        icons = ["speedometer2", "plus-circle", "exclamation-triangle", "bar-chart-line", "gear"]
+        main_options = ["Dashboard", "Altas", "Edición", "Incidencias", "Consultas y Analítica", "Administración"]
+        icons = ["speedometer2", "plus-circle", "pencil", "exclamation-triangle", "bar-chart-line", "gear"]
         
         # Determinar índice por defecto basado en navegación
         default_idx = 0
@@ -142,6 +189,10 @@ else:
             menu_icon="cast",
             default_index=default_idx,
         )
+    
+    # Limpiar contexto de gestión de acciones si se navega a otra sección
+    if main_selected != "Incidencias" and 'in_manage_actions' in st.session_state:
+        del st.session_state['in_manage_actions']
     
     if main_selected == "Dashboard":
         dashboard_main()
@@ -178,6 +229,25 @@ else:
         elif sub_selected == "Alta Incidencia":
             incident_form()
 
+    elif main_selected == "Edición":
+        with st.sidebar:
+            sub_selected = option_menu(
+                menu_title="Edición",
+                options=["Editar Coordinador", "Editar Verificador", "Editar Bodega", "Editar Incidencia"],
+                icons=["person-gear", "person-check-fill", "building-gear", "exclamation-triangle-fill"],
+                menu_icon="pencil",
+                default_index=0,
+            )
+
+        if sub_selected == "Editar Coordinador":
+            edit_coordinator_form()
+        elif sub_selected == "Editar Verificador":
+            edit_verifier_form()
+        elif sub_selected == "Editar Bodega":
+            edit_warehouse_form()
+        elif sub_selected == "Editar Incidencia":
+            edit_incident_form()
+
     elif main_selected == "Incidencias":
         with st.sidebar:
             # Determinar índice por defecto para submenú
@@ -197,6 +267,10 @@ else:
                 default_index=sub_default_idx,
             )
 
+        # Limpiar contexto de gestión de acciones si se navega a otra subsección
+        if sub_selected != "Gestión de Acciones" and 'in_manage_actions' in st.session_state:
+            del st.session_state['in_manage_actions']
+        
         if sub_selected == "Registro de Incidencia":
             incident_record_form()
         elif sub_selected == "Gestión de Acciones":

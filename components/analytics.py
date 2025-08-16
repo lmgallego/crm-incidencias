@@ -38,7 +38,7 @@ def display_filtered_table(title, df_getter):
         },
         'Consulta de Bodegas': {
             'Nombre': 'name',
-            'NIF': 'nif',
+            'Código Consejo': 'codigo_consejo',
             'Zona': 'zone'
         }
     }

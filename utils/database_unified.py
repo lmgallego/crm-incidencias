@@ -46,3 +46,22 @@ def check_database_connection():
     except Exception as e:
         logger.error(f"❌ Error de conexión a la base de datos: {e}")
         return False
+
+# Función adicional para filtros del dashboard
+def get_pending_incidents_by_coordinator(coordinator_id=None):
+    """Obtiene incidencias pendientes filtradas por coordinador asignado"""
+    if DATABASE_TYPE == "supabase":
+        from .database_supabase import get_pending_incidents_by_coordinator as get_pending_supabase
+        return get_pending_supabase(coordinator_id)
+    else:
+        from .database import get_pending_incidents_by_coordinator as get_pending_sqlite
+        return get_pending_sqlite(coordinator_id)
+
+def get_filtered_pending_incidents(coordinator_id=None, status=None, days=None):
+    """Obtiene incidencias pendientes con filtros múltiples"""
+    if DATABASE_TYPE == "supabase":
+        from .database_supabase import get_filtered_pending_incidents as get_filtered_supabase
+        return get_filtered_supabase(coordinator_id, status, days)
+    else:
+        from .database import get_filtered_pending_incidents as get_filtered_sqlite
+        return get_filtered_sqlite(coordinator_id, status, days)
