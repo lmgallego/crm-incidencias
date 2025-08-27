@@ -54,14 +54,10 @@ def is_deployed_environment():
 def should_use_supabase():
     """
     Determina si se debe usar Supabase en lugar de SQLite
+    CONFIGURADO PARA USAR ÚNICAMENTE SUPABASE EN LOCAL
     """
-    # Usar Supabase si está configurado (sin importar el entorno)
-    # O si se fuerza mediante variable de entorno
-    if os.getenv('FORCE_SUPABASE') == 'true':
-        return True
-    
-    # Cambio: usar Supabase siempre que esté configurado
-    return is_supabase_configured()
+    # Forzar el uso de Supabase únicamente (sin SQLite)
+    return True
 
 # Configuración de la base de datos
 DB_CONFIG = {

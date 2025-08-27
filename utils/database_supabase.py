@@ -301,7 +301,7 @@ def get_incident_actions(incident_record_id):
     try:
         client = get_supabase_connection()
         result = client.table('incident_actions').select(
-            'action_date, action_description, new_status, coordinators(name, surnames)'
+            'action_date, action_description, new_status, coordinators!incident_actions_performed_by_fkey(name, surnames)'
         ).eq('incident_record_id', incident_record_id).order('action_date').execute()
         
         actions = []
@@ -480,7 +480,7 @@ def export_incidents_to_excel():
         client = get_supabase_connection()
         actions_result = client.table('incident_actions').select(
             'incident_record_id, action_date, action_description, new_status, '
-            'coordinators(name, surnames)'
+            'coordinators!incident_actions_performed_by_fkey(name, surnames)'
         ).execute()
         
         actions_data = []
@@ -592,7 +592,7 @@ def get_pending_incidents_summary():
         result = client.table('incident_records').select(
             'id, date, status, responsible, '
             'warehouses(name, zone), verifiers(name, surnames), '
-            'incidents(description), coordinators(name, surnames)'
+            'incidents(description), coordinators!incident_records_assigned_coordinator_id_fkey(name, surnames)'
         ).neq('status', 'Solucionado').order('date', desc=True).limit(10).execute()
         
         processed_data = []
@@ -625,7 +625,7 @@ def get_recent_actions():
         client = get_supabase_connection()
         result = client.table('incident_actions').select(
             'action_date, action_description, new_status, '
-            'coordinators(name, surnames), incident_records(id, warehouses(name))'
+            'coordinators!incident_actions_performed_by_fkey(name, surnames), incident_records(id, warehouses(name))'
         ).order('action_date', desc=True).limit(5).execute()
         
         processed_data = []
@@ -826,13 +826,13 @@ def get_pending_incidents_by_coordinator(coordinator_id=None):
             result = client.table('incident_records').select(
                 'id, date, status, responsible, '
                 'warehouses(name, zone), verifiers(name, surnames), '
-                'incidents(description), coordinators(name, surnames)'
+                'incidents(description), coordinators!incident_records_assigned_coordinator_id_fkey(name, surnames)'
             ).neq('status', 'Solucionado').eq('assigned_coordinator_id', coordinator_id).order('date', desc=True).limit(10).execute()
         else:
             result = client.table('incident_records').select(
                 'id, date, status, responsible, '
                 'warehouses(name, zone), verifiers(name, surnames), '
-                'incidents(description), coordinators(name, surnames)'
+                'incidents(description), coordinators!incident_records_assigned_coordinator_id_fkey(name, surnames)'
             ).neq('status', 'Solucionado').order('date', desc=True).limit(10).execute()
         
         processed_data = []
@@ -868,7 +868,7 @@ def get_filtered_pending_incidents(coordinator_id=None, status=None, days=None):
         query = client.table('incident_records').select(
             'id, date, status, responsible, '
             'warehouses(name, zone), verifiers(name, surnames), '
-            'incidents(description), coordinators(name, surnames)'
+            'incidents(description), coordinators!incident_records_assigned_coordinator_id_fkey(name, surnames)'
         ).neq('status', 'Solucionado')
         
         # Agregar filtros según los parámetros
